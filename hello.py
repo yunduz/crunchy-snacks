@@ -80,8 +80,8 @@ def get_complete_bingo_cards(user_id):
             'bingo_squares': []
         }
 
-        bingo_squares_query = 'SELECT BingoSquare.id as id, question.id as q_id, question.description as q_description, BingoSquare.idx as idx FROM BingoSquare JOIN question ON BingoSquare.question_id = question.id WHERE bingo_card_id = ?'
-        for bingo_square in query_db(bingo_squares_query, bingo_card_id):
+        bingo_squares_query = 'SELECT BingoSquare.id as id, question.id as q_id, question.description as q_description, BingoSquare.idx as idx FROM BingoSquare JOIN question ON BingoSquare.question_id = question.id WHERE BingoSquare.bingo_card_id = ? ORDER BY BingoSquare.idx'
+        for bingo_square in query_db(bingo_squares_query, [bingo_card_id]):
             bingo_card_info['bingo_squares'].append(
                 {
                     'id': bingo_square['id'], 
@@ -107,7 +107,7 @@ def get_current_bingo_cards(user_id):
             'bingo_squares': []
         }
 
-        bingo_squares_query = 'SELECT BingoSquare.id as id, question.id as q_id, question.description as q_description, BingoSquare.idx as idx FROM BingoSquare JOIN question ON BingoSquare.question_id = question.id WHERE bingo_card_id = ?'
+        bingo_squares_query = 'SELECT BingoSquare.id as id, question.id as q_id, question.description as q_description, BingoSquare.idx as idx FROM BingoSquare JOIN question ON BingoSquare.question_id = question.id WHERE bingo_card_id = ? ORDER BY BingoSquare.idx'
         for bingo_square in query_db(bingo_squares_query, [bingo_card_id]):
             bingo_card_info['bingo_squares'].append(
                 {
@@ -121,13 +121,52 @@ def get_current_bingo_cards(user_id):
 
     return jsonify(complete_bingo_cards)
 
+def is_bingo(bingo_squares_asc):
+    bingo_idx_lst = []
+
+    patterns = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8],
+        [0, 3, 6],
+        [1, 4, 7],
+        [2, 5, 8],
+        [0, 4, 8],
+        [2, 4, 6],
+    ]
+
+    for pattern in patterns:
+        is_bingo = True
+        for idx in pattern:
+            is_bingo = is_bingo and bingo_squares_asc[idx]['user_id']
+
+        if is_bingo:
+            bingo_idx_lst.append(pattern)
+
+    return bingo_idx_lst
+
+
 @app.route('/update/bingo_square/<int:square_id>/<int:user_id>')
 def update_bingo_square(square_id, user_id):
     update_query = 'UPDATE BingoSquare SET user_id = ? where id = ?'
     cur = get_db().execute(update_query, [user_id, square_id])
     get_db().commit()
 
-    # check if we get a bingo
+    bingo_card_id = query_db(
+        'SELECT bingo_card_id FROM BingoSquare WHERE id = ?', 
+        [square_id],
+        True
+    )['bingo_card_id']
 
-    return 'Updated bingo square'
+    # check if we get a bingo
+    bingo_squares_query = 'SELECT idx, user_id FROM BingoSquare WHERE bingo_card_id = ? ORDER BY idx'
+    bingo_squares = query_db(bingo_squares_query, [bingo_card_id])
+
+    bingos_lst = is_bingo(bingo_squares)
+
+    if bingos_lst:
+        get_db().execute('UPDATE BingoCard SET complete = 1 WHERE id = ?', [bingo_card_id])
+        get_db().commit()
+
+    return str(bool(bingos_lst))
 
